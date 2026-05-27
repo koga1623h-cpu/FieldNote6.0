@@ -848,10 +848,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
         </svg>
-        つなぐ（共有事項）
+        つなぐ（共有）
       </div>
       <div class="flag-list" id="flag-list"></div>
-      <textarea id="f-flag-memo" placeholder="営業に伝えたいこと（提案ポイント・タイミング・注意点など）" style="margin-top:10px"></textarea>
+      <textarea id="f-flag-memo" placeholder="備考" style="margin-top:10px"></textarea>
     </div>
 
     <!-- メモ -->
@@ -961,7 +961,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
         データ管理
       </div>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">CSV形式で出力。Excelで開ける表形式で、バックアップや引き継ぎ用に。</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">Excel形式で出力。枠線・色付きで、開いたまま提出できます。</div>
 
       <!-- タブ -->
       <div style="display:flex;border:1px solid var(--border);border-radius:2px;margin-bottom:10px;overflow:hidden">
@@ -977,7 +977,7 @@
         </div>
         <button onclick="exportMonthCSV()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:14px;color:var(--text);font-family:DM Sans,sans-serif;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          この月をCSV出力
+          この月をExcel出力
         </button>
       </div>
 
@@ -988,7 +988,7 @@
         </div>
         <button onclick="exportAllCSV()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:14px;color:var(--text);font-family:DM Sans,sans-serif;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          全件CSV出力
+          全件Excel出力
         </button>
       </div>
     </div>
@@ -1092,7 +1092,19 @@
   </div>
 </div>
 
+<div class="popup-overlay" id="flag-detail-popup">
+  <div class="popup" style="max-height:80vh;display:flex;flex-direction:column">
+    <div class="popup-title" id="flag-detail-title">該当施設一覧</div>
+    <div id="flag-detail-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;overflow-y:auto;flex:1"></div>
+    <div class="popup-actions">
+      <button class="btn-save" onclick="closeFlagDetail()">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
 <script>
 // ── DATA ──
@@ -1961,6 +1973,51 @@ function closeHintPopup() {
   currentHintItemId = null;
 }
 
+function openFlagDetail(flagId) {
+  const flag = FLAGS.find(f => f.id === flagId);
+  if (!flag) return;
+  const matched = visits
+    .filter(v => v.flags?.[flagId])
+    .sort((a, b) => (b.dateKey || '').localeCompare(a.dateKey || ''));
+
+  document.getElementById('flag-detail-title').textContent = `${flag.label}（${matched.length}件）`;
+
+  const listEl = document.getElementById('flag-detail-list');
+  if (matched.length === 0) {
+    listEl.innerHTML = '<div style="font-size:13px;color:var(--text3);text-align:center;padding:24px">該当する記録はありません</div>';
+  } else {
+    listEl.innerHTML = matched.map(v => {
+      let dateLabel = v.datetime || '';
+      if (v.dateKey) {
+        const dd = new Date(v.dateKey);
+        if (!isNaN(dd.getTime())) {
+          const wd = ['日','月','火','水','木','金','土'][dd.getDay()];
+          dateLabel = `${dd.getFullYear()}.${String(dd.getMonth()+1).padStart(2,'0')}.${String(dd.getDate()).padStart(2,'0')} (${wd})`;
+        }
+      }
+      const memo = v.flagMemo ? v.flagMemo.replace(/</g,'&lt;').replace(/>/g,'&gt;') : '';
+      return `<div onclick="jumpFromFlagDetail('${v.id}')" style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--active);border-radius:2px;padding:12px 14px;cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:${memo?'8px':'0'}">
+          <span style="font-size:14px;color:var(--text);font-weight:500;flex:1">${v.facility || '（施設名未入力）'}</span>
+          <span style="font-family:DM Mono,monospace;font-size:11px;color:var(--text3);white-space:nowrap">${dateLabel}</span>
+        </div>
+        ${memo ? `<div style="font-size:12px;color:var(--text2);line-height:1.5;white-space:pre-wrap">${memo}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('flag-detail-popup').classList.add('show');
+}
+
+function closeFlagDetail() {
+  document.getElementById('flag-detail-popup').classList.remove('show');
+}
+
+function jumpFromFlagDetail(id) {
+  closeFlagDetail();
+  detailReturnTo = 'screen-summary';
+  openDetail(id);
+}
+
 function saveNote() {
   if (!currentPopupItemId) return;
   currentForm.items[currentPopupItemId].note = document.getElementById('popup-note').value.trim();
@@ -2332,25 +2389,13 @@ function exportAllText() {
 
 function exportAllCSV() {
   if (visits.length === 0) { showToast('記録がありません'); return; }
-  const headers = ['日時','施設','担当者','訪問理由',
-    ...ITEMS.map(i => i.label),
-    ...ITEMS.map(i => i.label + '_メモ'),
-    'つなぐ（共有事項）','共有メモ','メモ'];
-  const escape = s => {
-    if (s == null) return '';
-    s = String(s);
-    if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
-  };
   const sorted = visits.slice().sort((a, b) => {
     const ymA = a.yearMonth || '', ymB = b.yearMonth || '';
     if (ymA !== ymB) return ymA.localeCompare(ymB);
-    return a.datetime.localeCompare(b.datetime);
+    return (a.dateKey || '').localeCompare(b.dateKey || '');
   });
-  const rows = sorted.map(v => buildCSVRow(v, escape));
-  const content = '\uFEFF' + headers.map(escape).join(',') + '\n' + rows.join('\n');
-  downloadFile(content, `訪問記録_${getDateStamp()}_${visits.length}件.csv`, 'text/csv');
-  showToast(`${visits.length}件をCSVで出力`);
+  exportExcel(sorted, `訪問記録_${getDateStamp()}_${visits.length}件.xlsx`);
+  showToast(`${visits.length}件をExcelで出力`);
 }
 
 let selectedExportMonth = null;
@@ -2360,32 +2405,132 @@ function exportMonthCSV() {
   if (!ym) { showToast('月を選択してください'); return; }
   const monthly = visits.filter(v => v.yearMonth === ym);
   if (monthly.length === 0) { showToast('この月の記録はありません'); return; }
-  const headers = ['日時','施設','担当者','訪問理由',
-    ...ITEMS.map(i => i.label),
-    ...ITEMS.map(i => i.label + '_メモ'),
-    'つなぐ（共有事項）','共有メモ','メモ'];
-  const escape = s => {
-    if (s == null) return '';
-    s = String(s);
-    if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-    return s;
-  };
-  const sorted = monthly.slice().sort((a, b) => a.datetime.localeCompare(b.datetime));
-  const rows = sorted.map(v => buildCSVRow(v, escape));
-  const content = '\uFEFF' + headers.map(escape).join(',') + '\n' + rows.join('\n');
-  downloadFile(content, `訪問記録_${ym}_${monthly.length}件.csv`, 'text/csv');
-  showToast(`${monthly.length}件をCSVで出力`);
+  const sorted = monthly.slice().sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''));
+  exportExcel(sorted, `訪問記録_${ym}_${monthly.length}件.xlsx`);
+  showToast(`${monthly.length}件をExcelで出力`);
 }
 
-function buildCSVRow(v, escape) {
-  const row = [v.datetime, v.facility, v.contact || '', v.mainWork || ''];
-  ITEMS.forEach(i => row.push(v.items[i.id]?.checked ? '○' : ''));
-  ITEMS.forEach(i => row.push(v.items[i.id]?.note || ''));
-  const flagLabels = FLAGS.filter(f => v.flags?.[f.id]).map(f => f.label).join('・');
-  row.push(flagLabels);
-  row.push(v.flagMemo || '');
-  row.push(v.memo || '');
-  return row.map(escape).join(',');
+function exportExcel(rows, filename) {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excelライブラリ読込中。再度お試しください');
+    return;
+  }
+
+  // ヘッダー：固定列 + 各ITEMSごとに○列・メモ列 + 末尾メモ
+  const headers = [
+    '日付', '施設', '担当者', '訪問理由', 'つなぐ', '共有メモ',
+    ...ITEMS.flatMap(i => [i.label, `${i.label}_メモ`]),
+    'メモ'
+  ];
+
+  // データ行を構築
+  const dataRows = rows.map(v => {
+    let dateStr = '';
+    if (v.dateKey) {
+      const d = new Date(v.dateKey);
+      if (!isNaN(d.getTime())) {
+        dateStr = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+      }
+    }
+    const flagLabels = FLAGS.filter(f => v.flags?.[f.id]).map(f => f.label).join('／');
+    const itemCols = ITEMS.flatMap(i => {
+      const state = v.items?.[i.id];
+      return [state?.checked ? '○' : '', state?.note || ''];
+    });
+    return {
+      row: [dateStr, v.facility || '', v.contact || '', v.mainWork || '', flagLabels, v.flagMemo || '', ...itemCols, v.memo || ''],
+      _hasFlag: flagLabels !== '',
+    };
+  });
+
+  // シート配列を構築
+  const aoa = [headers, ...dataRows.map(r => r.row)];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // スタイル定義
+  const borderAll = {
+    top:    { style: 'thin', color: { rgb: '999999' } },
+    bottom: { style: 'thin', color: { rgb: '999999' } },
+    left:   { style: 'thin', color: { rgb: '999999' } },
+    right:  { style: 'thin', color: { rgb: '999999' } },
+  };
+  const headerStyle = {
+    font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
+    fill: { fgColor: { rgb: '3D6B52' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: borderAll,
+  };
+  const cellStyle = {
+    alignment: { vertical: 'top', wrapText: true },
+    border: borderAll,
+  };
+  const cellStyleHighlight = {
+    alignment: { vertical: 'top', wrapText: true },
+    border: borderAll,
+    fill: { fgColor: { rgb: 'E8F0EB' } },
+  };
+  // ○セル（中央揃え）
+  const cellStyleCheck = {
+    alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+    border: borderAll,
+  };
+  const cellStyleCheckHighlight = {
+    alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+    border: borderAll,
+    fill: { fgColor: { rgb: 'E8F0EB' } },
+  };
+
+  // ○列のインデックス（固定6列の後、2列ずつのうち偶数番目）
+  const fixedColsBefore = 6; // 日付,施設,担当者,訪問理由,つなぐ,共有メモ
+  const checkColIndexes = new Set();
+  ITEMS.forEach((_, idx) => {
+    checkColIndexes.add(fixedColsBefore + idx * 2);
+  });
+
+  // 全セルにスタイル適用
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    const isHeader = R === 0;
+    const dataIdx = R - 1;
+    const isHighlighted = !isHeader && dataRows[dataIdx]?._hasFlag;
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+      if (isHeader) {
+        ws[addr].s = headerStyle;
+      } else if (checkColIndexes.has(C)) {
+        ws[addr].s = isHighlighted ? cellStyleCheckHighlight : cellStyleCheck;
+      } else if (isHighlighted) {
+        ws[addr].s = cellStyleHighlight;
+      } else {
+        ws[addr].s = cellStyle;
+      }
+    }
+  }
+
+  // 列幅
+  const cols = [
+    { wch: 12 }, // 日付
+    { wch: 22 }, // 施設
+    { wch: 12 }, // 担当者
+    { wch: 16 }, // 訪問理由
+    { wch: 18 }, // つなぐ
+    { wch: 28 }, // 共有メモ
+  ];
+  ITEMS.forEach(() => {
+    cols.push({ wch: 8 });  // ○列は狭く
+    cols.push({ wch: 20 }); // メモ列
+  });
+  cols.push({ wch: 28 }); // メモ
+  ws['!cols'] = cols;
+
+  // ヘッダー行を固定
+  ws['!rows'] = [{ hpt: 28 }];
+  ws['!freeze'] = { xSplit: 2, ySplit: 1 }; // 日付・施設の2列も固定
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '訪問記録');
+  XLSX.writeFile(wb, filename);
 }
 
 function setExportTab(tab) {
@@ -2549,7 +2694,7 @@ function exportDailyEmail() {
   const blocks = dailyVisits.map((v, idx) => {
     const checkedLines = ITEMS
       .filter(i => v.items?.[i.id]?.checked)
-      .map(i => `・${i.label}${v.items[i.id]?.note ? '\n' + v.items[i.id].note : ''}`).join('\n');
+      .map(i => `・${i.label}${v.items[i.id]?.note ? '\n' + v.items[i.id].note : ''}`).join('\n\n');
     const activeFlags = FLAGS.filter(f => v.flags?.[f.id]).map(f => f.label).join('・');
     const hasAction = FLAGS.some(f => v.flags?.[f.id]);
     return [
@@ -2583,7 +2728,7 @@ function exportFromDetail(id) {
   const v = visits.find(v => v.id === id);
   if (!v) return;
   const checkedLines = ITEMS.filter(i => v.items[i.id]?.checked)
-    .map(i => `・${i.label}${v.items[i.id]?.note ? '\n' + v.items[i.id].note : ''}`).join('\n');
+    .map(i => `・${i.label}${v.items[i.id]?.note ? '\n' + v.items[i.id].note : ''}`).join('\n\n');
   const activeFlags = FLAGS.filter(f => v.flags?.[f.id]).map(f => f.label).join('・');
   const body = [
     `お疲れ様です。`,
@@ -2669,9 +2814,12 @@ function renderSummary() {
       ${FLAGS.map(f => {
         const count = flagCount[f.id];
         if (count === 0) return '';
-        return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        return `<div onclick="openFlagDetail('${f.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border);cursor:pointer">
           <span style="font-size:13px;color:var(--text)">${f.label}</span>
-          <span style="font-family:DM Mono,monospace;font-size:13px;color:var(--active);font-weight:500">${count}件</span>
+          <span style="display:flex;align-items:center;gap:6px">
+            <span style="font-family:DM Mono,monospace;font-size:13px;color:var(--active);font-weight:500">${count}件</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px;color:var(--text3)"><polyline points="9 18 15 12 9 6"/></svg>
+          </span>
         </div>`;
       }).join('')}
     </div>` : ''}
@@ -2747,7 +2895,12 @@ function showScreen(id) {
   window.scrollTo(0,0);
 }
 
-function goBack() { showScreen('screen-list'); }
+let detailReturnTo = null;
+function goBack() {
+  const target = detailReturnTo || 'screen-list';
+  detailReturnTo = null;
+  showScreen(target);
+}
 
 // ── スワイプでタブ切り替え（無効化中） ──
 const TAB_ORDER = ['screen-list', 'screen-export', 'screen-summary', 'screen-master'];
