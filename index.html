@@ -2549,7 +2549,7 @@ function exportDailyEmail() {
   const blocks = dailyVisits.map((v, idx) => {
     const checkedLines = ITEMS
       .filter(i => v.items?.[i.id]?.checked)
-      .map(i => `・${i.label}${v.items[i.id]?.note ? '（' + v.items[i.id].note + '）' : ''}`).join('\n');
+      .map(i => `・${i.label}${v.items[i.id]?.note ? '\n' + v.items[i.id].note : ''}`).join('\n');
     const activeFlags = FLAGS.filter(f => v.flags?.[f.id]).map(f => f.label).join('・');
     const hasAction = FLAGS.some(f => v.flags?.[f.id]);
     return [
@@ -2560,20 +2560,16 @@ function exportDailyEmail() {
       `■ 作業:${v.mainWork || '—'}`,
       activeFlags ? `■ ステータス：${activeFlags}` : '',
       v.flagMemo ? `\n■ 共有メモ\n${v.flagMemo}` : '',
-      checkedLines ? `\n■ あつめる(施設情報)\n${checkedLines}` : '',
+      checkedLines ? `\n■ 施設情報\n${checkedLines}` : '',
       v.memo ? `\n■ メモ\n${v.memo}` : '',
     ].filter(l => l !== '').join('\n');
   }).join('\n\n');
 
   const body = [
     `お疲れ様です。`,
-    `本日のつなぐ・あつめる活動の報告です。`,
+    `本日の情報共有です。`,
     ``,
     summaryBlock,
-    ``,
-    `─────────────────`,
-    `【各施設の詳細】`,
-    `─────────────────`,
     ``,
     blocks,
     ``,
@@ -2587,7 +2583,7 @@ function exportFromDetail(id) {
   const v = visits.find(v => v.id === id);
   if (!v) return;
   const checkedLines = ITEMS.filter(i => v.items[i.id]?.checked)
-    .map(i => `・${i.label}${v.items[i.id]?.note ? '（' + v.items[i.id].note + '）' : ''}`).join('\n');
+    .map(i => `・${i.label}${v.items[i.id]?.note ? '\n' + v.items[i.id].note : ''}`).join('\n');
   const activeFlags = FLAGS.filter(f => v.flags?.[f.id]).map(f => f.label).join('・');
   const body = [
     `お疲れ様です。`,
@@ -2600,7 +2596,7 @@ function exportFromDetail(id) {
     `■ 作業:${v.mainWork || '—'}`,
     activeFlags ? `■ ステータス：${activeFlags}` : '',
     v.flagMemo ? `\n■ 共有メモ\n${v.flagMemo}` : '',
-    checkedLines ? `\n■ あつめる(施設情報)\n${checkedLines}` : '',
+    checkedLines ? `\n■ 施設情報\n${checkedLines}` : '',
     v.memo ? `\n■ メモ\n${v.memo}` : '',
     ``,
     `ご確認をお願いいたします。`,
