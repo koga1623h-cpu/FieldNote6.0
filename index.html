@@ -2529,8 +2529,190 @@ function exportExcel(rows, filename) {
   ws['!freeze'] = { xSplit: 2, ySplit: 1 }; // 日付・施設の2列も固定
 
   const wb = XLSX.utils.book_new();
+
+  // 集計シートを先に追加
+  const summaryWs = buildSummarySheet(rows, headerStyle, cellStyle, borderAll);
+  if (summaryWs) {
+    XLSX.utils.book_append_sheet(wb, summaryWs, '集計');
+  }
+
   XLSX.utils.book_append_sheet(wb, ws, '訪問記録');
   XLSX.writeFile(wb, filename);
+}
+
+function buildSummarySheet(rows, headerStyle, cellStyle, borderAll) {
+  if (rows.length === 0) return null;
+
+  // 月リスト（昇順）
+  const months = [...new Set(rows.map(v => v.yearMonth).filter(Boolean))].sort();
+  if (months.length === 0) return null;
+
+  // 集計
+  const visitCountByMonth = {};
+  const itemCountByMonth = {};   // {ym: {itemId: count}}
+  const flagCountByMonth = {};   // {ym: {flagId: count}}
+
+  months.forEach(ym => {
+    visitCountByMonth[ym] = 0;
+    itemCountByMonth[ym] = {};
+    flagCountByMonth[ym] = {};
+    ITEMS.forEach(i => itemCountByMonth[ym][i.id] = 0);
+    FLAGS.forEach(f => flagCountByMonth[ym][f.id] = 0);
+  });
+
+  rows.forEach(v => {
+    const ym = v.yearMonth;
+    if (!ym || !visitCountByMonth.hasOwnProperty(ym)) return;
+    visitCountByMonth[ym]++;
+    ITEMS.forEach(i => {
+      if (v.items?.[i.id]?.checked) itemCountByMonth[ym][i.id]++;
+    });
+    FLAGS.forEach(f => {
+      if (v.flags?.[f.id]) flagCountByMonth[ym][f.id]++;
+    });
+  });
+
+  // 月ラベル整形（"2025-11" → "2025/11"）
+  const monthLabels = months.map(ym => ym.replace('-', '/'));
+  const totalVisits = rows.length;
+
+  // aoa構築
+  const aoa = [];
+
+  // タイトル行
+  const periodLabel = months.length === 1
+    ? monthLabels[0]
+    : `${monthLabels[0]} 〜 ${monthLabels[monthLabels.length - 1]}`;
+  aoa.push([`集計期間：${periodLabel}　訪問総数：${totalVisits}件`]);
+  aoa.push([]);
+
+  // セクション1：月別訪問件数
+  aoa.push(['【月別 訪問件数】']);
+  aoa.push(['', ...monthLabels, '合計']);
+  aoa.push(['訪問件数', ...months.map(ym => visitCountByMonth[ym]), totalVisits]);
+  aoa.push([]);
+
+  // セクション2：あつめる項目
+  aoa.push(['【月別 あつめる項目(件数)】']);
+  aoa.push(['', ...monthLabels, '合計']);
+  ITEMS.forEach(i => {
+    const counts = months.map(ym => itemCountByMonth[ym][i.id]);
+    const total = counts.reduce((a, b) => a + b, 0);
+    aoa.push([i.label, ...counts, total]);
+  });
+  aoa.push([]);
+
+  // セクション3：つなぐ
+  aoa.push(['【月別 つなぐ(件数)】']);
+  aoa.push(['', ...monthLabels, '合計']);
+  FLAGS.forEach(f => {
+    const counts = months.map(ym => flagCountByMonth[ym][f.id]);
+    const total = counts.reduce((a, b) => a + b, 0);
+    aoa.push([f.label, ...counts, total]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // スタイル
+  const titleStyle = {
+    font: { bold: true, sz: 13, color: { rgb: '3D6B52' } },
+    alignment: { vertical: 'center' },
+  };
+  const sectionStyle = {
+    font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
+    fill: { fgColor: { rgb: '3D6B52' } },
+    alignment: { vertical: 'center' },
+    border: borderAll,
+  };
+  const tableHeaderStyle = {
+    font: { bold: true, sz: 10, color: { rgb: 'FFFFFF' } },
+    fill: { fgColor: { rgb: '7A9485' } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: borderAll,
+  };
+  const labelCellStyle = {
+    font: { bold: true, sz: 11 },
+    fill: { fgColor: { rgb: 'F0F2F1' } },
+    alignment: { vertical: 'center' },
+    border: borderAll,
+  };
+  const numCellStyle = {
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: borderAll,
+  };
+  const totalCellStyle = {
+    font: { bold: true },
+    fill: { fgColor: { rgb: 'F0F2F1' } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: borderAll,
+  };
+
+  // セルスタイル適用
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  const totalColIdx = months.length + 1; // 0=ラベル, 1〜months.length=月, +1=合計列
+
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    const row = aoa[R];
+    if (!row || row.length === 0) continue;
+    const firstCell = row[0];
+
+    // タイトル行
+    if (R === 0) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: 0 });
+      if (ws[addr]) ws[addr].s = titleStyle;
+      continue;
+    }
+
+    // セクション見出し行（【】で始まる）
+    if (typeof firstCell === 'string' && firstCell.startsWith('【')) {
+      for (let C = 0; C <= totalColIdx; C++) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+        ws[addr].s = sectionStyle;
+      }
+      continue;
+    }
+
+    // 表ヘッダー行（最初が空で月ラベルが続く）
+    if (firstCell === '' && row.length > 1 && monthLabels.includes(row[1])) {
+      for (let C = 0; C <= totalColIdx; C++) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+        ws[addr].s = tableHeaderStyle;
+      }
+      continue;
+    }
+
+    // データ行（最初のセルにラベルがあり、その後数値）
+    if (typeof firstCell === 'string' && firstCell !== '' && !firstCell.startsWith('【')) {
+      for (let C = 0; C <= totalColIdx; C++) {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+        if (C === 0) {
+          ws[addr].s = labelCellStyle;
+        } else if (C === totalColIdx) {
+          ws[addr].s = totalCellStyle;
+        } else {
+          ws[addr].s = numCellStyle;
+        }
+      }
+    }
+  }
+
+  // 列幅
+  ws['!cols'] = [
+    { wch: 20 }, // ラベル
+    ...months.map(() => ({ wch: 10 })),
+    { wch: 10 }, // 合計
+  ];
+
+  // タイトル行を結合
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: totalColIdx } }];
+
+  // タイトル行の高さ
+  ws['!rows'] = [{ hpt: 24 }];
+
+  return ws;
 }
 
 function setExportTab(tab) {
