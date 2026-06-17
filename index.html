@@ -797,9 +797,10 @@
         </svg>
         施設名
       </div>
-      <select id="f-facility" onchange="showPrevVisit()">
-        <option value="">施設を選択してください</option>
-      </select>
+      <div style="position:relative">
+        <input type="text" id="f-facility" placeholder="施設名を入力" autocomplete="off" oninput="onFacilityInput()" onfocus="onFacilityInput()">
+        <div id="facility-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--bg);border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px;max-height:240px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+      </div>
       <div id="prev-visit" style="display:none;margin-top:10px"></div>
     </div>
 
@@ -837,7 +838,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        あつめる（情報）
+        あつめる（情報共有）
       </div>
       <div class="items-list" id="items-list"></div>
     </div>
@@ -848,7 +849,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
         </svg>
-        つなぐ（共有）
+        つなぐ（PBへのお願い）
       </div>
       <div class="flag-list" id="flag-list"></div>
       <textarea id="f-flag-memo" placeholder="備考" style="margin-top:10px"></textarea>
@@ -909,6 +910,26 @@
 <!-- ══════════════════════════════ MASTER SCREEN ══════════════════════════════ -->
 <div id="screen-master" class="screen">
   <div class="form-body">
+    <!-- 訪問者名 -->
+    <div class="field">
+      <div class="field-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        訪問者名（メールに自動で記載）
+      </div>
+      <input type="text" id="reporter-input" placeholder="例：山田太郎" oninput="saveReporter()" style="width:100%">
+    </div>
+
+    <!-- PB送信先 -->
+    <div class="field">
+      <div class="field-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        PB送信先（メールの宛先に自動セット）
+      </div>
+      <textarea id="pb-email-input" placeholder="複数の場合は改行かカンマで区切る&#10;例：&#10;tanaka@example.com&#10;suzuki@example.com" oninput="savePbEmail()" style="width:100%;min-height:80px"></textarea>
+    </div>
+
+    <div style="height:1px;background:var(--border);margin:8px 0 24px"></div>
+
     <!-- 施設管理 -->
     <div class="field">
       <div class="field-label">
@@ -1104,7 +1125,7 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" defer></script>
 
 <script>
 // ── DATA ──
@@ -1211,6 +1232,31 @@ const FLAGS = [
 let visits = JSON.parse(localStorage.getItem('visits') || '[]');
 let facilities = JSON.parse(localStorage.getItem('facilities') || '[]');
 let works = JSON.parse(localStorage.getItem('works') || '["ベッド修理","定期点検","眠りSCAN設置・指導","その他"]');
+let reporterName = localStorage.getItem('reporterName') || '';
+
+// ── 訪問者名 ──
+function saveReporter() {
+  reporterName = document.getElementById('reporter-input').value.trim();
+  localStorage.setItem('reporterName', reporterName);
+}
+
+let pbEmail = localStorage.getItem('pbEmail') || '';
+
+// ── PB送信先 ──
+function savePbEmail() {
+  pbEmail = document.getElementById('pb-email-input').value;
+  localStorage.setItem('pbEmail', pbEmail);
+}
+
+// 登録された複数アドレスを mailto 用のカンマ区切り文字列に整形
+function getPbEmailTo() {
+  if (!pbEmail) return '';
+  return pbEmail
+    .split(/[\n,、，]/)        // 改行・半角/全角カンマ・読点で分割
+    .map(s => s.trim())
+    .filter(s => s)
+    .join(',');
+}
 
 // ── GOAL ──
 function saveGoal2() {
@@ -1582,15 +1628,70 @@ function removeFacility(i) {
   renderMasterList();
 }
 
-function populateFacilitySelect() {
-  const sel = document.getElementById('f-facility');
-  sel.innerHTML = '<option value="">施設を選択してください</option>';
-  facilities.forEach(f => {
-    const opt = document.createElement('option');
-    opt.value = f; opt.textContent = f;
-    sel.appendChild(opt);
-  });
+// 施設名の正規化（照合専用・前後空白除去＋全角半角統一）
+function normalizeFacility(name) {
+  if (!name) return '';
+  let s = String(name).trim();
+  // 全角英数字→半角
+  s = s.replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  // 半角カナ→全角カナ
+  const kanaMap = {
+    'ｶﾞ':'ガ','ｷﾞ':'ギ','ｸﾞ':'グ','ｹﾞ':'ゲ','ｺﾞ':'ゴ','ｻﾞ':'ザ','ｼﾞ':'ジ','ｽﾞ':'ズ','ｾﾞ':'ゼ','ｿﾞ':'ゾ',
+    'ﾀﾞ':'ダ','ﾁﾞ':'ヂ','ﾂﾞ':'ヅ','ﾃﾞ':'デ','ﾄﾞ':'ド','ﾊﾞ':'バ','ﾋﾞ':'ビ','ﾌﾞ':'ブ','ﾍﾞ':'ベ','ﾎﾞ':'ボ',
+    'ﾊﾟ':'パ','ﾋﾟ':'ピ','ﾌﾟ':'プ','ﾍﾟ':'ペ','ﾎﾟ':'ポ',
+    'ｱ':'ア','ｲ':'イ','ｳ':'ウ','ｴ':'エ','ｵ':'オ','ｶ':'カ','ｷ':'キ','ｸ':'ク','ｹ':'ケ','ｺ':'コ',
+    'ｻ':'サ','ｼ':'シ','ｽ':'ス','ｾ':'セ','ｿ':'ソ','ﾀ':'タ','ﾁ':'チ','ﾂ':'ツ','ﾃ':'テ','ﾄ':'ト',
+    'ﾅ':'ナ','ﾆ':'ニ','ﾇ':'ヌ','ﾈ':'ネ','ﾉ':'ノ','ﾊ':'ハ','ﾋ':'ヒ','ﾌ':'フ','ﾍ':'ヘ','ﾎ':'ホ',
+    'ﾏ':'マ','ﾐ':'ミ','ﾑ':'ム','ﾒ':'メ','ﾓ':'モ','ﾔ':'ヤ','ﾕ':'ユ','ﾖ':'ヨ',
+    'ﾗ':'ラ','ﾘ':'リ','ﾙ':'ル','ﾚ':'レ','ﾛ':'ロ','ﾜ':'ワ','ｦ':'ヲ','ﾝ':'ン',
+    'ｧ':'ァ','ｨ':'ィ','ｩ':'ゥ','ｪ':'ェ','ｫ':'ォ','ｬ':'ャ','ｭ':'ュ','ｮ':'ョ','ｯ':'ッ','ｰ':'ー','ﾞ':'゛','ﾟ':'゜'
+  };
+  s = s.replace(/ｶﾞ|ｷﾞ|ｸﾞ|ｹﾞ|ｺﾞ|ｻﾞ|ｼﾞ|ｽﾞ|ｾﾞ|ｿﾞ|ﾀﾞ|ﾁﾞ|ﾂﾞ|ﾃﾞ|ﾄﾞ|ﾊﾞ|ﾋﾞ|ﾌﾞ|ﾍﾞ|ﾎﾞ|ﾊﾟ|ﾋﾟ|ﾌﾟ|ﾍﾟ|ﾎﾟ|[ｱ-ﾝｦｧ-ｯｰﾞﾟ]/g, c => kanaMap[c] || c);
+  // 連続スペースを1つに、全角スペースも半角に
+  s = s.replace(/\u3000/g, ' ').replace(/\s+/g, ' ');
+  return s;
 }
+
+// 既存施設リストの中から、正規化して一致するものを返す（なければ入力値そのまま）
+function resolveFacilityName(input) {
+  const norm = normalizeFacility(input);
+  const match = facilities.find(f => normalizeFacility(f) === norm);
+  return match || input.trim();
+}
+
+// サジェスト表示
+function onFacilityInput() {
+  const input = document.getElementById('f-facility');
+  const box = document.getElementById('facility-suggest');
+  const q = input.value.trim();
+
+  showPrevVisit();
+
+  if (!q) { box.style.display = 'none'; return; }
+
+  const qNorm = normalizeFacility(q);
+  // 完全一致が既にある場合は候補を出さない（選び終わっている状態）
+  const exact = facilities.some(f => normalizeFacility(f) === qNorm);
+
+  const matches = facilities.filter(f => {
+    const fn = normalizeFacility(f);
+    return fn.includes(qNorm) && fn !== qNorm;
+  }).slice(0, 8);
+
+  if (matches.length === 0 || exact) { box.style.display = 'none'; return; }
+
+  box.innerHTML = matches.map(f =>
+    `<div onclick="selectFacility('${f.replace(/'/g, "\\'")}')" style="padding:11px 14px;cursor:pointer;font-size:14px;color:var(--text);border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">${f}</div>`
+  ).join('');
+  box.style.display = 'block';
+}
+
+function selectFacility(name) {
+  document.getElementById('f-facility').value = name;
+  document.getElementById('facility-suggest').style.display = 'none';
+  showPrevVisit();
+}
+
 let currentForm = null;
 let currentPopupItemId = null;
 let editingVisitId = null;
@@ -1766,9 +1867,9 @@ function openNewVisit() {
     items: Object.fromEntries(ITEMS.map(i => [i.id, { checked: false, note: '' }])),
     flags: Object.fromEntries(FLAGS.map(f => [f.id, false])),
   };
-  populateFacilitySelect();
   populateWorkSelect();
   document.getElementById('f-facility').value = '';
+  document.getElementById('facility-suggest').style.display = 'none';
   document.getElementById('f-main-work').value = '';
   document.getElementById('f-contact').value = '';
   document.getElementById('f-memo').value = '';
@@ -1792,15 +1893,8 @@ function openEditVisit(id) {
   ITEMS.forEach(i => { if (!currentForm.items[i.id]) currentForm.items[i.id] = { checked: false, note: '' }; });
   FLAGS.forEach(f => { if (currentForm.flags[f.id] === undefined) currentForm.flags[f.id] = false; });
 
-  populateFacilitySelect();
   populateWorkSelect();
-  // 既存施設がマスターにない場合は選択肢に追加
-  const sel = document.getElementById('f-facility');
-  if (v.facility && ![...sel.options].some(o => o.value === v.facility)) {
-    const opt = document.createElement('option');
-    opt.value = v.facility; opt.textContent = v.facility;
-    sel.appendChild(opt);
-  }
+  // 既存施設がマスターにない作業はselectに追加
   const wsel = document.getElementById('f-main-work');
   if (v.mainWork && ![...wsel.options].some(o => o.value === v.mainWork)) {
     const opt = document.createElement('option');
@@ -1809,6 +1903,7 @@ function openEditVisit(id) {
   }
 
   document.getElementById('f-facility').value = v.facility || '';
+  document.getElementById('facility-suggest').style.display = 'none';
   document.getElementById('f-main-work').value = v.mainWork || '';
   document.getElementById('f-contact').value = v.contact || '';
   document.getElementById('f-memo').value = v.memo || '';
@@ -2028,8 +2123,16 @@ function saveNote() {
 
 // ── SAVE ──
 function saveVisit() {
-  const facility = document.getElementById('f-facility').value.trim();
-  if (!facility) { showToast('施設を選択してください'); return; }
+  const rawFacility = document.getElementById('f-facility').value.trim();
+  if (!rawFacility) { showToast('施設名を入力してください'); return; }
+  // 正規化して既存施設と照合（ゆらぎ吸収）。一致すれば既存の表記に統一
+  const facility = resolveFacilityName(rawFacility);
+  // 新規施設ならマスターに自動登録
+  if (!facilities.some(f => normalizeFacility(f) === normalizeFacility(facility))) {
+    facilities.push(facility);
+    facilities.sort((a, b) => a.localeCompare(b, 'ja'));
+    localStorage.setItem('facilities', JSON.stringify(facilities));
+  }
 
   // 編集の場合は元の日時を維持、新規の場合は今の日時
   let datetime, yearMonth, dateKey;
@@ -2128,8 +2231,14 @@ function showPrevVisit() {
 }
 
 function saveAndExport() {
-  const facility = document.getElementById('f-facility').value.trim();
-  if (!facility) { showToast('施設を選択してください'); return; }
+  const rawFacility = document.getElementById('f-facility').value.trim();
+  if (!rawFacility) { showToast('施設名を入力してください'); return; }
+  const facility = resolveFacilityName(rawFacility);
+  if (!facilities.some(f => normalizeFacility(f) === normalizeFacility(facility))) {
+    facilities.push(facility);
+    facilities.sort((a, b) => a.localeCompare(b, 'ja'));
+    localStorage.setItem('facilities', JSON.stringify(facilities));
+  }
 
   let datetime, yearMonth, dateKey;
   if (editingVisitId) {
@@ -2204,7 +2313,7 @@ function exportVisit() {
 
   const subject = encodeURIComponent(`【訪問報告】${facility} ${dateStr}`);
   const bodyEncoded = encodeURIComponent(body);
-  window.location.href = `mailto:?subject=${subject}&body=${bodyEncoded}`;
+  window.location.href = `mailto:${getPbEmailTo()}?subject=${subject}&body=${bodyEncoded}`;
 }
 
 // ── DETAIL ──
@@ -2901,9 +3010,10 @@ function exportDailyEmail() {
     blocks,
     ``,
     `ご確認をお願いいたします。`,
+    ...(reporterName ? ['', `訪問者：${reporterName}`] : []),
   ].join('\n');
 
-  window.location.href = `mailto:?subject=${subject}&body=${encodeURIComponent(body)}`;
+  window.location.href = `mailto:${getPbEmailTo()}?subject=${subject}&body=${encodeURIComponent(body)}`;
 }
 
 function exportFromDetail(id) {
@@ -2927,9 +3037,10 @@ function exportFromDetail(id) {
     v.memo ? `\n■ メモ\n${v.memo}` : '',
     ``,
     `ご確認をお願いいたします。`,
+    reporterName ? `\n訪問者：${reporterName}` : '',
   ].filter(l => l !== '').join('\n');
   const subject = encodeURIComponent(`【訪問報告】${v.facility} ${v.datetime}`);
-  window.location.href = `mailto:?subject=${subject}&body=${encodeURIComponent(body)}`;
+  window.location.href = `mailto:${getPbEmailTo()}?subject=${subject}&body=${encodeURIComponent(body)}`;
   v.exported = true;
   localStorage.setItem('visits', JSON.stringify(visits));
 }
@@ -3070,7 +3181,13 @@ function showScreen(id) {
   const hideNav = ['screen-form', 'screen-detail'].includes(id);
   document.querySelector('.header').style.display = hideNav ? 'none' : 'flex';
   document.querySelector('.header-nav').style.display = hideNav ? 'none' : 'flex';
-  if (id === 'screen-master') { renderMasterList(); renderWorkList(); renderExportStats(); }
+  if (id === 'screen-master') {
+    renderMasterList(); renderWorkList(); renderExportStats();
+    const repInput = document.getElementById('reporter-input');
+    if (repInput) repInput.value = reporterName;
+    const pbInput = document.getElementById('pb-email-input');
+    if (pbInput) pbInput.value = pbEmail;
+  }
   if (id === 'screen-progress') { renderProgressScreen(); }
   if (id === 'screen-summary') renderSummary();
   if (id === 'screen-export') renderExportStats();
@@ -3100,6 +3217,14 @@ function showToast(msg) {
   });
   document.getElementById('work-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') addWork();
+  });
+  // 施設サジェストの外側をタップしたら閉じる
+  document.addEventListener('click', e => {
+    const box = document.getElementById('facility-suggest');
+    const input = document.getElementById('f-facility');
+    if (box && input && !box.contains(e.target) && e.target !== input) {
+      box.style.display = 'none';
+    }
   });
   init();
 </script>
