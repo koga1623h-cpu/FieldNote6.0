@@ -724,7 +724,7 @@
     あつめる
   </button>
   <button class="nav-tab" id="tab-export" onclick="showScreen('screen-export')">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:12px;height:12px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:12px;height:12px"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>
     つなぐ
   </button>
   <button class="nav-tab" id="tab-summary" onclick="showScreen('screen-summary')">
@@ -804,15 +804,32 @@
       <div id="prev-visit" style="display:none;margin-top:10px"></div>
     </div>
 
-    <!-- 担当者 -->
+    <!-- PT訪問者 -->
     <div class="field">
       <div class="field-label">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
         </svg>
-        担当者
+        PT訪問者
       </div>
-      <input type="text" id="f-contact" placeholder="担当者名">
+      <div style="position:relative">
+        <input type="text" id="f-reporter" placeholder="訪問した人" autocomplete="off" oninput="onReporterInput()" onfocus="onReporterInput()">
+        <div id="reporter-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--bg);border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px;max-height:240px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+      </div>
+    </div>
+
+    <!-- 客先担当者 -->
+    <div class="field">
+      <div class="field-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+        </svg>
+        客先担当者
+      </div>
+      <div style="position:relative">
+        <input type="text" id="f-contact" placeholder="先方の担当者名" autocomplete="off" oninput="onContactInput()" onfocus="onContactInput()">
+        <div id="contact-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--bg);border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px;max-height:240px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+      </div>
     </div>
 
     <!-- 訪問理由 -->
@@ -823,13 +840,10 @@
         </svg>
         訪問理由
       </div>
-      <select id="f-main-work">
-        <option value="">選択してください</option>
-        <option value="ベッド修理">ベッド修理</option>
-        <option value="定期点検">定期点検</option>
-        <option value="眠りSCAN設置・指導">眠りSCAN設置・指導</option>
-        <option value="その他">その他</option>
-      </select>
+      <div style="position:relative">
+        <input type="text" id="f-main-work" placeholder="作業を入力または選択" autocomplete="off" oninput="onWorkInput()" onfocus="onWorkInput()">
+        <div id="work-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--bg);border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px;max-height:240px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+      </div>
     </div>
 
     <!-- あつめる -->
@@ -1613,15 +1627,6 @@ function removeWork(i) {
   renderWorkList();
 }
 
-function populateWorkSelect() {
-  const sel = document.getElementById('f-main-work');
-  sel.innerHTML = '<option value="">選択してください</option>';
-  works.forEach(w => {
-    const opt = document.createElement('option');
-    opt.value = w; opt.textContent = w;
-    sel.appendChild(opt);
-  });
-}
 function removeFacility(i) {
   facilities.splice(i, 1);
   localStorage.setItem('facilities', JSON.stringify(facilities));
@@ -1690,6 +1695,68 @@ function selectFacility(name) {
   document.getElementById('f-facility').value = name;
   document.getElementById('facility-suggest').style.display = 'none';
   showPrevVisit();
+}
+
+// 過去の訪問記録から、指定フィールドの値の一覧を新しい順・重複なしで取得
+function getHistoryValues(field) {
+  const seen = new Set();
+  const result = [];
+  const sorted = visits.slice().sort((a, b) => (b.dateKey || '').localeCompare(a.dateKey || ''));
+  sorted.forEach(v => {
+    const val = (v[field] || '').trim();
+    if (val && !seen.has(val)) { seen.add(val); result.push(val); }
+  });
+  return result;
+}
+
+// 作業の候補: マスター(works)を先頭に、過去記録を後ろに統合（重複なし）
+function mergeWorkCandidates(history) {
+  const seen = new Set();
+  const result = [];
+  works.forEach(w => { const v = (w || '').trim(); if (v && !seen.has(v)) { seen.add(v); result.push(v); } });
+  history.forEach(v => { if (v && !seen.has(v)) { seen.add(v); result.push(v); } });
+  return result;
+}
+
+// 汎用サジェスト表示
+function showSuggest(inputId, boxId, field, selectFn) {
+  const input = document.getElementById(inputId);
+  const box = document.getElementById(boxId);
+  const q = input.value.trim();
+  let all = getHistoryValues(field);
+  if (field === 'mainWork') all = mergeWorkCandidates(all);
+
+  let candidates;
+  if (!q) {
+    candidates = all.slice(0, 6); // 未入力時は直近6件
+  } else {
+    candidates = all.filter(v => v.includes(q) && v !== q).slice(0, 8);
+  }
+
+  if (candidates.length === 0) { box.style.display = 'none'; return; }
+
+  box.innerHTML = candidates.map(v =>
+    `<div onclick="${selectFn}('${v.replace(/'/g, "\\'")}')" style="padding:11px 14px;cursor:pointer;font-size:14px;color:var(--text);border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">${v}</div>`
+  ).join('');
+  box.style.display = 'block';
+}
+
+function onReporterInput() { showSuggest('f-reporter', 'reporter-suggest', 'reporter', 'selectReporter'); }
+function selectReporter(name) {
+  document.getElementById('f-reporter').value = name;
+  document.getElementById('reporter-suggest').style.display = 'none';
+}
+
+function onContactInput() { showSuggest('f-contact', 'contact-suggest', 'contact', 'selectContact'); }
+function selectContact(name) {
+  document.getElementById('f-contact').value = name;
+  document.getElementById('contact-suggest').style.display = 'none';
+}
+
+function onWorkInput() { showSuggest('f-main-work', 'work-suggest', 'mainWork', 'selectWork'); }
+function selectWork(name) {
+  document.getElementById('f-main-work').value = name;
+  document.getElementById('work-suggest').style.display = 'none';
 }
 
 let currentForm = null;
@@ -1867,11 +1934,15 @@ function openNewVisit() {
     items: Object.fromEntries(ITEMS.map(i => [i.id, { checked: false, note: '' }])),
     flags: Object.fromEntries(FLAGS.map(f => [f.id, false])),
   };
-  populateWorkSelect();
   document.getElementById('f-facility').value = '';
   document.getElementById('facility-suggest').style.display = 'none';
   document.getElementById('f-main-work').value = '';
+  document.getElementById('work-suggest').style.display = 'none';
+  const lastReporter = getHistoryValues('reporter')[0] || '';
+  document.getElementById('f-reporter').value = lastReporter;
+  document.getElementById('reporter-suggest').style.display = 'none';
   document.getElementById('f-contact').value = '';
+  document.getElementById('contact-suggest').style.display = 'none';
   document.getElementById('f-memo').value = '';
   document.getElementById('f-flag-memo').value = '';
   document.getElementById('prev-visit').style.display = 'none';
@@ -1893,19 +1964,14 @@ function openEditVisit(id) {
   ITEMS.forEach(i => { if (!currentForm.items[i.id]) currentForm.items[i.id] = { checked: false, note: '' }; });
   FLAGS.forEach(f => { if (currentForm.flags[f.id] === undefined) currentForm.flags[f.id] = false; });
 
-  populateWorkSelect();
-  // 既存施設がマスターにない作業はselectに追加
-  const wsel = document.getElementById('f-main-work');
-  if (v.mainWork && ![...wsel.options].some(o => o.value === v.mainWork)) {
-    const opt = document.createElement('option');
-    opt.value = v.mainWork; opt.textContent = v.mainWork;
-    wsel.appendChild(opt);
-  }
-
   document.getElementById('f-facility').value = v.facility || '';
   document.getElementById('facility-suggest').style.display = 'none';
   document.getElementById('f-main-work').value = v.mainWork || '';
+  document.getElementById('work-suggest').style.display = 'none';
+  document.getElementById('f-reporter').value = v.reporter || '';
+  document.getElementById('reporter-suggest').style.display = 'none';
   document.getElementById('f-contact').value = v.contact || '';
+  document.getElementById('contact-suggest').style.display = 'none';
   document.getElementById('f-memo').value = v.memo || '';
   document.getElementById('f-flag-memo').value = v.flagMemo || '';
   document.querySelector('#screen-form .form-title').textContent = '訪問記録を編集';
@@ -2151,6 +2217,7 @@ function saveVisit() {
   const visit = {
     id: editingVisitId || Date.now().toString(),
     facility,
+    reporter: document.getElementById('f-reporter').value.trim(),
     contact: document.getElementById('f-contact').value.trim(),
     mainWork: document.getElementById('f-main-work').value,
     memo: document.getElementById('f-memo').value.trim(),
@@ -2257,6 +2324,7 @@ function saveAndExport() {
   const visit = {
     id,
     facility,
+    reporter: document.getElementById('f-reporter').value.trim(),
     contact: document.getElementById('f-contact').value.trim(),
     mainWork: document.getElementById('f-main-work').value,
     memo: document.getElementById('f-memo').value.trim(),
@@ -2286,6 +2354,7 @@ function saveAndExport() {
 // ── EXPORT ──
 function exportVisit() {
   const facility = document.getElementById('f-facility').value.trim() || '（施設名）';
+  const reporter = document.getElementById('f-reporter').value.trim();
   const contact = document.getElementById('f-contact').value.trim();
   const mainWork = document.getElementById('f-main-work').value || '—';
   const memo = document.getElementById('f-memo').value.trim();
@@ -2994,9 +3063,9 @@ function exportDailyEmail() {
       `━━━━━━━━━━━━━━━━━━━━`,
       v.contact ? `■ 担当:${v.contact}` : '',
       `■ 作業:${v.mainWork || '—'}`,
-      activeFlags ? `■ ステータス：${activeFlags}` : '',
-      v.flagMemo ? `\n■ 共有メモ\n${v.flagMemo}` : '',
       checkedLines ? `\n■ 施設情報\n${checkedLines}` : '',
+      activeFlags ? `\n■ ステータス：${activeFlags}` : '',
+      v.flagMemo ? `\n■ 共有メモ\n${v.flagMemo}` : '',
       v.memo ? `\n■ メモ\n${v.memo}` : '',
     ].filter(l => l !== '').join('\n');
   }).join('\n\n');
@@ -3031,9 +3100,9 @@ function exportFromDetail(id) {
     `■ 施設:${v.facility}`,
     v.contact ? `■ 担当:${v.contact}` : '',
     `■ 作業:${v.mainWork || '—'}`,
-    activeFlags ? `■ ステータス：${activeFlags}` : '',
-    v.flagMemo ? `\n■ 共有メモ\n${v.flagMemo}` : '',
     checkedLines ? `\n■ 施設情報\n${checkedLines}` : '',
+    activeFlags ? `\n■ ステータス：${activeFlags}` : '',
+    v.flagMemo ? `\n■ 共有メモ\n${v.flagMemo}` : '',
     v.memo ? `\n■ メモ\n${v.memo}` : '',
     ``,
     `ご確認をお願いいたします。`,
@@ -3218,13 +3287,13 @@ function showToast(msg) {
   document.getElementById('work-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') addWork();
   });
-  // 施設サジェストの外側をタップしたら閉じる
+  // サジェストの外側をタップしたら閉じる
   document.addEventListener('click', e => {
-    const box = document.getElementById('facility-suggest');
-    const input = document.getElementById('f-facility');
-    if (box && input && !box.contains(e.target) && e.target !== input) {
-      box.style.display = 'none';
-    }
+    [['facility-suggest','f-facility'],['reporter-suggest','f-reporter'],['contact-suggest','f-contact'],['work-suggest','f-main-work']].forEach(([boxId, inputId]) => {
+      const box = document.getElementById(boxId);
+      const input = document.getElementById(inputId);
+      if (box && input && !box.contains(e.target) && e.target !== input) box.style.display = 'none';
+    });
   });
   init();
 </script>
