@@ -477,7 +477,49 @@
   select option { background: var(--surface); }
 
   /* ── ITEM ROWS ── */
-  .items-list { display: flex; flex-direction: column; gap: 8px; }
+  .items-list { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+  .item-cell {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 8px 5px;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    transition: border-color 0.15s, background 0.15s;
+    min-height: 86px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .item-cell.checked { border-color: var(--active); background: rgba(200,184,154,0.08); }
+  .item-cell:active { background: var(--surface2); }
+  .item-cell .item-icon { width: 20px; height: 20px; color: var(--text3); margin: 0 auto; transition: color 0.15s; }
+  .item-cell.checked .item-icon { color: var(--active); }
+  .item-cell .item-name { font-size: 12px; color: var(--text2); margin-top: 6px; line-height: 1.3; transition: color 0.15s; }
+  .item-cell.checked .item-name { color: var(--text); }
+  .item-cell .cell-check {
+    position: absolute; top: 5px; right: 5px;
+    width: 14px; height: 14px; color: var(--active);
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .item-cell.checked .cell-check { opacity: 1; }
+  .item-cell .cell-note {
+    font-size: 11px; color: var(--active); font-weight: 500;
+    margin-top: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%; padding: 0 2px;
+  }
+  .item-cell .hint-btn { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; font-size: 10px; margin-left: 0; }
+  .field-guide {
+    font-size: 12px; font-weight: 500;
+    color: #8a6d0b;
+    background: rgba(232,190,45,0.18);
+    border: 1px solid rgba(200,160,20,0.55);
+    border-radius: 20px;
+    padding: 3px 10px;
+    margin-left: auto;
+    white-space: nowrap;
+  }
   .item-row {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -777,7 +819,7 @@
 </div>
 
 <!-- ══════════════════════════════ FORM SCREEN ══════════════════════════════ -->
-<div id="screen-form" class="screen">
+<div id="screen-form" class="screen" oninput="scheduleDraftSave()">
   <div class="form-header">
     <button class="back-btn" onclick="goBack()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -788,6 +830,22 @@
   </div>
 
   <div class="form-body">
+    <div id="draft-bar" style="display:none;align-items:center;gap:10px;background:rgba(232,190,45,0.14);border:1px solid rgba(200,160,20,0.45);border-radius:2px;padding:8px 12px;margin-bottom:16px">
+      <span style="flex:1;font-size:12px;color:#8a6d0b;font-weight:500">✎ 下書きを復元しました（自動保存中）</span>
+      <button onclick="discardDraft()" style="background:none;border:1px solid rgba(200,160,20,0.55);border-radius:2px;color:#8a6d0b;font-size:12px;padding:4px 10px;cursor:pointer">破棄</button>
+    </div>
+    <!-- 県 -->
+    <div class="field">
+      <div class="field-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+        県
+      </div>
+      <select id="f-pref" onchange="onPrefChange()">
+      </select>
+    </div>
+
     <!-- 施設名 -->
     <div class="field">
       <div class="field-label">
@@ -846,21 +904,10 @@
       </div>
     </div>
 
-    <!-- あつめる -->
-    <div class="field">
-      <div class="field-label">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        あつめる（情報共有）
-      </div>
-      <div class="items-list" id="items-list"></div>
-    </div>
-
     <!-- 提案フラグ -->
-    <div class="field">
-      <div class="field-label">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <div class="field" style="background:rgba(232,190,45,0.10);border:1px solid rgba(200,160,20,0.45);border-radius:4px;padding:12px">
+      <div class="field-label" style="margin-bottom:10px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#8a6d0b" stroke-width="1.5">
           <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
         </svg>
         つなぐ（PBへのお願い）
@@ -869,15 +916,32 @@
       <textarea id="f-flag-memo" placeholder="備考" style="margin-top:10px"></textarea>
     </div>
 
+    <!-- あつめる -->
+    <div class="field" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:12px">
+      <div class="field-label" style="margin-bottom:10px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        あつめる（情報共有）
+        <span class="field-guide">↓ タップして詳細を入力</span>
+      </div>
+      <div class="items-list" id="items-list"></div>
+    </div>
+
     <!-- メモ -->
     <div class="field">
-      <div class="field-label">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-        </svg>
-        メモ
+      <button id="memo-toggle" onclick="expandMemo()" style="background:none;border:none;color:var(--text3);font-size:13px;font-family:'DM Sans',sans-serif;cursor:pointer;padding:4px 0;display:flex;align-items:center;gap:5px">
+        <span style="font-size:15px;line-height:1">＋</span> メモを追加
+      </button>
+      <div id="memo-body" style="display:none">
+        <div class="field-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+          メモ
+        </div>
+        <textarea id="f-memo" placeholder="気になった点・申し送り事項など"></textarea>
       </div>
-      <textarea id="f-memo" placeholder="気になった点・申し送り事項など"></textarea>
     </div>
   </div>
 
@@ -913,6 +977,12 @@
 
 <!-- ══════════════════════════════ SUMMARY SCREEN ══════════════════════════════ -->
 <div id="screen-summary" class="screen">
+  <div id="summary-scope" style="display:none;padding:12px 24px 0">
+    <div style="display:flex;border:1px solid var(--border);border-radius:2px;overflow:hidden">
+      <button id="scope-mine" onclick="setScope('mine')" style="flex:1;border:none;padding:9px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer">自分のみ</button>
+      <button id="scope-all" onclick="setScope('all')" style="flex:1;border:none;padding:9px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer">支店全体</button>
+    </div>
+  </div>
   <div style="padding:16px 24px 8px;display:flex;gap:8px;align-items:center">
     <button onclick="shiftMonth(-1)" style="background:none;border:1px solid var(--border);border-radius:2px;padding:8px 14px;cursor:pointer;color:var(--text2);font-size:16px">‹</button>
     <div id="summary-month-label" style="flex:1;text-align:center;font-family:DM Mono,monospace;font-size:14px;font-weight:500;color:var(--text)"></div>
@@ -944,17 +1014,6 @@
 
     <div style="height:1px;background:var(--border);margin:8px 0 24px"></div>
 
-    <!-- 施設管理 -->
-    <div class="field">
-      <div class="field-label">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
-        施設を追加
-      </div>
-      <div style="display:flex;gap:8px">
-        <input type="text" id="master-input" placeholder="施設名を入力" style="flex:1">
-        <button onclick="addFacility()" style="background:var(--accent);border:none;border-radius:2px;padding:0 18px;color:var(--bg);font-family:DM Sans,sans-serif;font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap">追加</button>
-      </div>
-    </div>
     <div class="field">
       <div class="field-label master-toggle" onclick="toggleMasterList('master')" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between">
         <span style="display:flex;align-items:center;gap:6px">
@@ -967,17 +1026,6 @@
 
     <div style="height:1px;background:var(--border);margin:8px 0 24px"></div>
 
-    <!-- 訪問理由 -->
-    <div class="field">
-      <div class="field-label">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-        訪問理由を追加
-      </div>
-      <div style="display:flex;gap:8px">
-        <input type="text" id="work-input" placeholder="作業名を入力" style="flex:1">
-        <button onclick="addWork()" style="background:var(--accent);border:none;border-radius:2px;padding:0 18px;color:var(--bg);font-family:DM Sans,sans-serif;font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap">追加</button>
-      </div>
-    </div>
     <div class="field">
       <div class="field-label master-toggle" onclick="toggleMasterList('work')" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between">
         <span style="display:flex;align-items:center;gap:6px">
@@ -998,6 +1046,7 @@
       </div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">Excel形式で出力。枠線・色付きで、開いたまま提出できます。</div>
 
+      <label id="export-scope-wrap" style="display:none;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:10px;cursor:pointer"><input type="checkbox" id="export-include-imported" onchange="renderExportStats()" style="width:16px;height:16px;accent-color:var(--accent)"> 取り込みデータを含める（支店全体）</label>
       <!-- タブ -->
       <div style="display:flex;border:1px solid var(--border);border-radius:2px;margin-bottom:10px;overflow:hidden">
         <button id="export-tab-month" onclick="setExportTab('month')" style="flex:1;background:var(--accent);color:var(--bg);border:none;padding:10px;font-family:DM Sans,sans-serif;font-size:13px;font-weight:500;cursor:pointer">月別</button>
@@ -1026,6 +1075,20 @@
           全件Excel出力
         </button>
       </div>
+    </div>
+
+    <!-- 支店データ集約 -->
+    <div class="field">
+      <div class="field-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        支店データ集約（JSON）
+      </div>
+      <div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:10px">メンバーが書き出したJSONを取り込むと、集計タブで「支店全体」を表示できます。自分の記録・進捗には混ざりません。</div>
+      <button onclick="exportAllJSON()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:12px;color:var(--text);font-family:DM Sans,sans-serif;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:8px">自分のデータをJSON書き出し</button>
+      <input type="file" id="import-json-file" accept=".json,application/json" multiple style="display:none" onchange="importJSONFiles(this.files)">
+      <button onclick="document.getElementById('import-json-file').click()" style="width:100%;background:var(--accent);border:none;border-radius:2px;padding:12px;color:var(--bg);font-family:DM Sans,sans-serif;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:8px">JSONを取り込み（複数可）</button>
+      <div id="import-stats" style="font-family:DM Mono,monospace;font-size:12px;color:var(--text2);padding:6px 2px"></div>
+      <button id="import-clear-btn" onclick="clearImported()" style="display:none;width:100%;background:none;border:1px solid var(--danger);border-radius:2px;padding:10px;color:var(--danger);font-family:DM Sans,sans-serif;font-size:13px;cursor:pointer;margin-top:4px">取り込みデータを全削除</button>
     </div>
   </div>
 </div>
@@ -1239,11 +1302,13 @@ const FLAGS = [
   { id: 'propose',  label: '要提案' },
   { id: 'estimate', label: '見積依頼' },
   { id: 'replace',  label: '更新検討' },
-  { id: 'urgent',   label: '至急' },
   { id: 'watch',    label: '要観察' },
 ];
 
 let visits = JSON.parse(localStorage.getItem('visits') || '[]');
+let importedVisits = JSON.parse(localStorage.getItem('importedVisits') || '[]');
+let summaryScope = 'mine';
+function scopedVisits() { return summaryScope === 'all' ? visits.concat(importedVisits) : visits; }
 let facilities = JSON.parse(localStorage.getItem('facilities') || '[]');
 let works = JSON.parse(localStorage.getItem('works') || '["ベッド修理","定期点検","眠りSCAN設置・指導","その他"]');
 let reporterName = localStorage.getItem('reporterName') || '';
@@ -1565,21 +1630,6 @@ function renderMasterList() {
     </div>`).join('');
 }
 
-function addFacility() {
-  const val = document.getElementById('master-input').value.trim();
-  if (!val) return;
-  if (facilities.includes(val)) { showToast('すでに登録済みです'); return; }
-  facilities.push(val);
-  facilities.sort((a, b) => a.localeCompare(b, 'ja'));
-  localStorage.setItem('facilities', JSON.stringify(facilities));
-  document.getElementById('master-input').value = '';
-  renderMasterList();
-  // 閉じてたら開く
-  const list = document.getElementById('master-list');
-  if (list.style.display === 'none') toggleMasterList('master');
-  showToast('追加しました');
-}
-
 function renderWorkList() {
   const el = document.getElementById('work-list');
   if (!el) return;
@@ -1606,19 +1656,6 @@ function toggleMasterList(type) {
   const open = list.style.display !== 'none';
   list.style.display = open ? 'none' : 'block';
   if (chev) chev.style.transform = open ? '' : 'rotate(90deg)';
-}
-
-function addWork() {
-  const val = document.getElementById('work-input').value.trim();
-  if (!val) return;
-  if (works.includes(val)) { showToast('すでに登録済みです'); return; }
-  works.push(val);
-  localStorage.setItem('works', JSON.stringify(works));
-  document.getElementById('work-input').value = '';
-  renderWorkList();
-  const list = document.getElementById('work-list');
-  if (list.style.display === 'none') toggleMasterList('work');
-  showToast('追加しました');
 }
 
 function removeWork(i) {
@@ -1927,6 +1964,90 @@ function clearSearch() {
   renderList();
 }
 
+const PREFS = ['福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
+function populatePrefSelect(selected) {
+  const sel = document.getElementById('f-pref');
+  const last = localStorage.getItem('lastPref') || '';
+  const ordered = last && PREFS.includes(last)
+    ? [last, ...PREFS.filter(p => p !== last)]
+    : PREFS;
+  sel.innerHTML = '<option value="">県を選択</option>' +
+    ordered.map(p => `<option value="${p}">${p}</option>`).join('');
+  sel.value = selected !== undefined ? (selected || '') : last;
+}
+function onPrefChange() {
+  const v = document.getElementById('f-pref').value;
+  if (v) localStorage.setItem('lastPref', v);
+}
+
+function expandMemo() {
+  document.getElementById('memo-toggle').style.display = 'none';
+  document.getElementById('memo-body').style.display = 'block';
+  document.getElementById('f-memo').focus();
+}
+function setMemoVisible(hasMemo) {
+  document.getElementById('memo-toggle').style.display = hasMemo ? 'none' : 'flex';
+  document.getElementById('memo-body').style.display = hasMemo ? 'block' : 'none';
+}
+
+// ── DRAFT (一時保存) ──
+let draftTimer = null;
+function scheduleDraftSave() {
+  if (editingVisitId) return;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(saveDraft, 400);
+}
+function saveDraft() {
+  if (editingVisitId || !currentForm) return;
+  const draft = {
+    pref: document.getElementById('f-pref').value,
+    facility: document.getElementById('f-facility').value,
+    reporter: document.getElementById('f-reporter').value,
+    contact: document.getElementById('f-contact').value,
+    mainWork: document.getElementById('f-main-work').value,
+    memo: document.getElementById('f-memo').value,
+    flagMemo: document.getElementById('f-flag-memo').value,
+    items: currentForm.items,
+    flags: currentForm.flags,
+  };
+  const hasContent = draft.facility || draft.contact || draft.memo || draft.flagMemo ||
+    Object.values(draft.items).some(s => s.checked || s.note) ||
+    Object.values(draft.flags).some(v => v);
+  if (hasContent) localStorage.setItem('visitDraft', JSON.stringify(draft));
+  else localStorage.removeItem('visitDraft');
+}
+function clearDraft() {
+  clearTimeout(draftTimer);
+  localStorage.removeItem('visitDraft');
+  document.getElementById('draft-bar').style.display = 'none';
+}
+function discardDraft() {
+  clearDraft();
+  openNewVisit();
+  showToast('下書きを破棄しました');
+}
+function restoreDraft() {
+  const raw = localStorage.getItem('visitDraft');
+  if (!raw) return false;
+  try {
+    const d = JSON.parse(raw);
+    populatePrefSelect(d.pref || '');
+    document.getElementById('f-facility').value = d.facility || '';
+    document.getElementById('f-reporter').value = d.reporter || '';
+    document.getElementById('f-contact').value = d.contact || '';
+    document.getElementById('f-main-work').value = d.mainWork || '';
+    document.getElementById('f-memo').value = d.memo || '';
+    document.getElementById('f-flag-memo').value = d.flagMemo || '';
+    setMemoVisible(!!(d.memo || '').trim());
+    if (d.items) { ITEMS.forEach(i => { if (d.items[i.id]) currentForm.items[i.id] = d.items[i.id]; }); }
+    if (d.flags) { FLAGS.forEach(f => { if (d.flags[f.id] !== undefined) currentForm.flags[f.id] = d.flags[f.id]; }); }
+    renderItems();
+    renderFlags();
+    document.getElementById('draft-bar').style.display = 'flex';
+    return true;
+  } catch (e) { return false; }
+}
+
 // ── NEW VISIT ──
 function openNewVisit() {
   editingVisitId = null;
@@ -1934,6 +2055,7 @@ function openNewVisit() {
     items: Object.fromEntries(ITEMS.map(i => [i.id, { checked: false, note: '' }])),
     flags: Object.fromEntries(FLAGS.map(f => [f.id, false])),
   };
+  populatePrefSelect();
   document.getElementById('f-facility').value = '';
   document.getElementById('facility-suggest').style.display = 'none';
   document.getElementById('f-main-work').value = '';
@@ -1949,6 +2071,9 @@ function openNewVisit() {
   document.querySelector('#screen-form .form-title').textContent = '訪問記録';
   renderItems();
   renderFlags();
+  document.getElementById('draft-bar').style.display = 'none';
+  setMemoVisible(false);
+  if (restoreDraft()) showToast('下書きを復元しました');
   showScreen('screen-form');
 }
 
@@ -1964,6 +2089,7 @@ function openEditVisit(id) {
   ITEMS.forEach(i => { if (!currentForm.items[i.id]) currentForm.items[i.id] = { checked: false, note: '' }; });
   FLAGS.forEach(f => { if (currentForm.flags[f.id] === undefined) currentForm.flags[f.id] = false; });
 
+  populatePrefSelect(v.pref || '');
   document.getElementById('f-facility').value = v.facility || '';
   document.getElementById('facility-suggest').style.display = 'none';
   document.getElementById('f-main-work').value = v.mainWork || '';
@@ -1974,7 +2100,9 @@ function openEditVisit(id) {
   document.getElementById('contact-suggest').style.display = 'none';
   document.getElementById('f-memo').value = v.memo || '';
   document.getElementById('f-flag-memo').value = v.flagMemo || '';
+  setMemoVisible(!!(v.memo || '').trim());
   document.querySelector('#screen-form .form-title').textContent = '訪問記録を編集';
+  document.getElementById('draft-bar').style.display = 'none';
   renderItems();
   renderFlags();
   showPrevVisit();
@@ -2026,6 +2154,7 @@ function renderFlags() {
 function toggleFlag(id) {
   currentForm.flags[id] = !currentForm.flags[id];
   renderFlags();
+  scheduleDraftSave();
 }
 
 function renderItems() {
@@ -2033,34 +2162,30 @@ function renderItems() {
   el.innerHTML = ITEMS.map(item => {
     const state = currentForm.items[item.id];
     const hasNote = !!state.note;
-    const noteDisplay = hasNote
-      ? `<div class="item-note-inline has-note" onclick="event.stopPropagation(); openPopup('${item.id}')">${state.note}</div>`
-      : `<div class="item-note-inline empty" onclick="event.stopPropagation(); openPopup('${item.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px;display:inline-block;vertical-align:middle"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>`;
     const hasHints = getHints(item.id).length > 0;
-    return `<div class="item-row ${state.checked ? 'checked' : ''}" id="row-${item.id}" onclick="toggleItem('${item.id}')">
-      <div class="item-check">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-      </div>
-      <div class="item-icon">${item.icon}</div>
-      <div class="item-info">
-        <div class="item-name">${item.label}</div>
-      </div>
-      ${noteDisplay}
+    return `<div class="item-cell ${state.checked ? 'checked' : ''}" id="row-${item.id}" onclick="toggleItem('${item.id}')">
+      <svg class="cell-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
       ${hasHints ? `<button class="hint-btn" onclick="event.stopPropagation(); openHint('${item.id}')" aria-label="ヒント">?</button>` : ''}
+      <div class="item-icon">${item.icon}</div>
+      <div class="item-name">${item.label}</div>
+      ${hasNote ? `<div class="cell-note" onclick="event.stopPropagation(); openPopup('${item.id}')">✎ ${state.note}</div>` : ''}
     </div>`;
   }).join('');
 }
 
 function toggleItem(id) {
-  currentForm.items[id].checked = !currentForm.items[id].checked;
+  const wasChecked = currentForm.items[id].checked;
+  currentForm.items[id].checked = !wasChecked;
   renderItems();
+  scheduleDraftSave();
+  if (!wasChecked) openPopup(id);
 }
 
 // ── POPUP ──
 function openPopup(itemId) {
   currentPopupItemId = itemId;
   const item = ITEMS.find(i => i.id === itemId);
-  document.getElementById('popup-title').textContent = item.label + ' — メモ';
+  document.getElementById('popup-title').textContent = item.label + ' — 特記事項（なければ閉じてOK）';
   document.getElementById('popup-note').value = currentForm.items[itemId].note || '';
   document.getElementById('note-popup').classList.add('show');
   setTimeout(() => document.getElementById('popup-note').focus(), 100);
@@ -2137,7 +2262,7 @@ function closeHintPopup() {
 function openFlagDetail(flagId) {
   const flag = FLAGS.find(f => f.id === flagId);
   if (!flag) return;
-  const matched = visits
+  const matched = scopedVisits()
     .filter(v => v.flags?.[flagId])
     .sort((a, b) => (b.dateKey || '').localeCompare(a.dateKey || ''));
 
@@ -2185,6 +2310,7 @@ function saveNote() {
   currentForm.items[currentPopupItemId].checked = true;
   closePopup();
   renderItems();
+  scheduleDraftSave();
 }
 
 // ── SAVE ──
@@ -2217,6 +2343,7 @@ function saveVisit() {
   const visit = {
     id: editingVisitId || Date.now().toString(),
     facility,
+    pref: document.getElementById('f-pref').value,
     reporter: document.getElementById('f-reporter').value.trim(),
     contact: document.getElementById('f-contact').value.trim(),
     mainWork: document.getElementById('f-main-work').value,
@@ -2238,6 +2365,7 @@ function saveVisit() {
   }
 
   localStorage.setItem('visits', JSON.stringify(visits));
+  if (!editingVisitId) clearDraft();
   showToast(editingVisitId ? '更新しました' : '保存しました');
   editingVisitId = null;
   renderList();
@@ -2324,6 +2452,7 @@ function saveAndExport() {
   const visit = {
     id,
     facility,
+    pref: document.getElementById('f-pref').value,
     reporter: document.getElementById('f-reporter').value.trim(),
     contact: document.getElementById('f-contact').value.trim(),
     mainWork: document.getElementById('f-main-work').value,
@@ -2345,6 +2474,7 @@ function saveAndExport() {
   }
 
   localStorage.setItem('visits', JSON.stringify(visits));
+  if (!editingVisitId) clearDraft();
   editingVisitId = null;
   renderList();
   exportFromDetail(id);
@@ -2388,7 +2518,7 @@ function exportVisit() {
 
 // ── DETAIL ──
 function openDetail(id) {
-  const v = visits.find(v => v.id === id);
+  const v = visits.find(v => v.id === id) || importedVisits.find(v => v.id === id);
   if (!v) return;
 
   const itemsHtml = ITEMS.map(item => {
@@ -2430,7 +2560,7 @@ function openDetail(id) {
     <div class="detail-hero">
       <div class="detail-facility">${v.facility || '（施設名未入力）'}</div>
       <div class="detail-meta">
-        ${dateLabel}
+        ${v.pref ? v.pref + '<br>' : ''}${dateLabel}
         ${v.contact ? '<br>' + v.contact : ''}
         ${v.mainWork ? '<br>' + v.mainWork : ''}
       </div>
@@ -2567,22 +2697,27 @@ function exportAllText() {
 }
 
 function exportAllCSV() {
-  if (visits.length === 0) { showToast('記録がありません'); return; }
-  const sorted = visits.slice().sort((a, b) => {
+  const base = exportBaseVisits();
+  if (base.length === 0) { showToast('記録がありません'); return; }
+  const sorted = base.slice().sort((a, b) => {
     const ymA = a.yearMonth || '', ymB = b.yearMonth || '';
     if (ymA !== ymB) return ymA.localeCompare(ymB);
     return (a.dateKey || '').localeCompare(b.dateKey || '');
   });
-  exportExcel(sorted, `訪問記録_${getDateStamp()}_${visits.length}件.xlsx`);
-  showToast(`${visits.length}件をExcelで出力`);
+  exportExcel(sorted, `訪問記録_${getDateStamp()}_${base.length}件.xlsx`);
+  showToast(`${base.length}件をExcelで出力`);
 }
 
 let selectedExportMonth = null;
+function exportBaseVisits() {
+  const cb = document.getElementById('export-include-imported');
+  return (cb && cb.checked) ? visits.concat(importedVisits) : visits;
+}
 
 function exportMonthCSV() {
   const ym = selectedExportMonth;
   if (!ym) { showToast('月を選択してください'); return; }
-  const monthly = visits.filter(v => v.yearMonth === ym);
+  const monthly = exportBaseVisits().filter(v => v.yearMonth === ym);
   if (monthly.length === 0) { showToast('この月の記録はありません'); return; }
   const sorted = monthly.slice().sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''));
   exportExcel(sorted, `訪問記録_${ym}_${monthly.length}件.xlsx`);
@@ -2919,7 +3054,7 @@ function setExportTab(tab) {
 function populateExportMonths() {
   const sel = document.getElementById('export-month-select');
   if (!sel) return;
-  const months = [...new Set(visits.map(v => v.yearMonth).filter(Boolean))].sort().reverse();
+  const months = [...new Set(exportBaseVisits().map(v => v.yearMonth).filter(Boolean))].sort().reverse();
   if (months.length === 0) {
     sel.innerHTML = `<option value="">記録なし</option>`;
     selectedExportMonth = null;
@@ -2947,9 +3082,65 @@ function updateExportMonthStats() {
   if (!el) return;
   const ym = selectedExportMonth;
   if (!ym) { el.textContent = '—'; return; }
-  const count = visits.filter(v => v.yearMonth === ym).length;
-  const facCount = new Set(visits.filter(v => v.yearMonth === ym).map(v => v.facility)).size;
+  const base = exportBaseVisits();
+  const count = base.filter(v => v.yearMonth === ym).length;
+  const facCount = new Set(base.filter(v => v.yearMonth === ym).map(v => v.facility)).size;
   el.textContent = `${count}件　／　${facCount}施設`;
+}
+
+// ── 支店データ集約（JSON取り込み） ──
+function importJSONFiles(files) {
+  if (!files || !files.length) return;
+  let added = 0, dup = 0, pending = files.length;
+  Array.from(files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const payload = JSON.parse(reader.result);
+        const list = Array.isArray(payload) ? payload : (payload.visits || []);
+        const ownIds = new Set(visits.map(v => v.id));
+        const impIds = new Set(importedVisits.map(v => v.id));
+        list.forEach(v => {
+          if (!v || !v.id) return;
+          if (ownIds.has(v.id) || impIds.has(v.id)) { dup++; return; }
+          v.imported = true;
+          importedVisits.push(v);
+          impIds.add(v.id);
+          added++;
+        });
+      } catch (e) { showToast('読み込み失敗：' + file.name); }
+      if (--pending === 0) {
+        localStorage.setItem('importedVisits', JSON.stringify(importedVisits));
+        renderImportStats();
+        showToast(`${added}件を取り込みました${dup ? '（重複' + dup + '件はスキップ）' : ''}`);
+      }
+    };
+    reader.readAsText(file);
+  });
+  document.getElementById('import-json-file').value = '';
+}
+function clearImported() {
+  if (importedVisits.length === 0) { showToast('取り込みデータはありません'); return; }
+  if (!confirm(`取り込み済み${importedVisits.length}件を削除しますか？\n（自分の記録は消えません）`)) return;
+  importedVisits = [];
+  localStorage.removeItem('importedVisits');
+  summaryScope = 'mine';
+  renderImportStats();
+  showToast('取り込みデータを削除しました');
+}
+function renderImportStats() {
+  const el = document.getElementById('import-stats');
+  if (!el) return;
+  const reporters = new Set(importedVisits.map(v => v.reporter).filter(Boolean));
+  el.textContent = importedVisits.length
+    ? `取り込み済み：${importedVisits.length}件（記録者 ${reporters.size}名）`
+    : '取り込みデータなし';
+  const btn = document.getElementById('import-clear-btn');
+  if (btn) btn.style.display = importedVisits.length ? 'block' : 'none';
+}
+function setScope(scope) {
+  summaryScope = scope;
+  renderSummary();
 }
 
 function exportAllJSON() {
@@ -2966,9 +3157,12 @@ function exportAllJSON() {
 }
 
 function renderExportStats() {
+  const wrap = document.getElementById('export-scope-wrap');
+  if (wrap) wrap.style.display = importedVisits.length ? 'flex' : 'none';
   const el = document.getElementById('export-stats');
   if (!el) return;
-  el.textContent = `${visits.length}件　／　${facilities.length}施設`;
+  const base = exportBaseVisits();
+  el.textContent = `${base.length}件　／　${new Set(base.map(v => v.facility)).size}施設`;
   populateExportMonths();
   // 日付選択をデフォルトで今日に
   const dateInput = document.getElementById('daily-date');
@@ -3055,20 +3249,23 @@ function exportDailyEmail() {
   const blocks = dailyVisits.map((v, idx) => {
     const checkedLines = ITEMS
       .filter(i => v.items?.[i.id]?.checked)
-      .map(i => `・${i.label}${v.items[i.id]?.note ? '\n' + v.items[i.id].note : ''}`).join('\n\n');
+      .map(i => {
+        const note = v.items[i.id]?.note;
+        return note ? `・${i.label}：${note}` : `・${i.label}`;
+      }).join('\n');
     const activeFlags = FLAGS.filter(f => v.flags?.[f.id]).map(f => f.label).join('・');
     const hasAction = FLAGS.some(f => v.flags?.[f.id]);
+    const dateOnly = (v.datetime || '').split(' ')[0];
     return [
       `━━━━━━━━━━━━━━━━━━━━`,
-      `【${idx + 1}】${hasAction ? '★ ' : ''}${v.facility}　${v.datetime}`,
+      `【${idx + 1}】${hasAction ? '★ ' : ''}${v.facility}${v.pref ? '（' + v.pref + '）' : ''}　${dateOnly}`,
       `━━━━━━━━━━━━━━━━━━━━`,
-      v.reporter ? `■ 訪問者:${v.reporter}` : '',
-      v.contact ? `■ 担当:${v.contact}` : '',
-      `■ 作業:${v.mainWork || '—'}`,
-      checkedLines ? `\n■ 施設情報\n${checkedLines}` : '',
-      activeFlags ? `\n■ ステータス：${activeFlags}` : '',
-      v.flagMemo ? `\n■ 共有メモ\n${v.flagMemo}` : '',
-      v.memo ? `\n■ メモ\n${v.memo}` : '',
+      v.reporter ? `訪問：${v.reporter}` : '',
+      v.contact ? `先方：${v.contact}` : '',
+      `作業：${v.mainWork || '—'}`,
+      (activeFlags || v.flagMemo) ? `\n★ PBへのお願い${activeFlags ? '【' + activeFlags + '】' : ''}${v.flagMemo ? '\n' + v.flagMemo : ''}` : '',
+      checkedLines ? `\n▼ 施設情報\n${checkedLines}` : '',
+      v.memo ? `\n▼ メモ\n${v.memo}` : '',
     ].filter(l => l !== '').join('\n');
   }).join('\n\n');
 
@@ -3090,28 +3287,28 @@ function exportDailyEmail() {
 function exportFromDetail(id) {
   const v = visits.find(v => v.id === id);
   if (!v) return;
+  const dateOnly = (v.datetime || '').split(' ')[0];
   const checkedLines = ITEMS.filter(i => v.items[i.id]?.checked)
-    .map(i => `・${i.label}${v.items[i.id]?.note ? '\n' + v.items[i.id].note : ''}`).join('\n\n');
+    .map(i => {
+      const note = v.items[i.id]?.note;
+      return note ? `・${i.label}：${note}` : `・${i.label}`;
+    }).join('\n');
   const activeFlags = FLAGS.filter(f => v.flags?.[f.id]).map(f => f.label).join('・');
   const body = [
-    `お疲れ様です。`,
-    `表題の件、訪問してきましたので共有いたします。`,
+    `お疲れ様です。訪問報告です。`,
     ``,
-    `【訪問報告】${v.facility}　${v.datetime}`,
+    `${v.facility}${v.pref ? '（' + v.pref + '）' : ''}　${dateOnly}`,
+    v.reporter ? `訪問：${v.reporter}` : '',
+    v.contact ? `先方：${v.contact}` : '',
+    `作業：${v.mainWork || '—'}`,
+    (activeFlags || v.flagMemo) ? `\n★ PBへのお願い${activeFlags ? '【' + activeFlags + '】' : ''}${v.flagMemo ? '\n' + v.flagMemo : ''}` : '',
+    checkedLines ? `\n▼ 施設情報\n${checkedLines}` : '',
+    v.memo ? `\n▼ メモ\n${v.memo}` : '',
     ``,
-    `■ 施設:${v.facility}`,
-    v.reporter ? `■ 訪問者:${v.reporter}` : '',
-    v.contact ? `■ 担当:${v.contact}` : '',
-    `■ 作業:${v.mainWork || '—'}`,
-    checkedLines ? `\n■ 施設情報\n${checkedLines}` : '',
-    activeFlags ? `\n■ ステータス：${activeFlags}` : '',
-    v.flagMemo ? `\n■ 共有メモ\n${v.flagMemo}` : '',
-    v.memo ? `\n■ メモ\n${v.memo}` : '',
-    ``,
-    `ご確認をお願いいたします。`,
-    reporterName ? `\n訪問者：${reporterName}` : '',
+    `以上、ご確認お願いします。`,
+    reporterName ? reporterName : '',
   ].filter(l => l !== '').join('\n');
-  const subject = encodeURIComponent(`【訪問報告】${v.facility} ${v.datetime}`);
+  const subject = encodeURIComponent(`【訪問報告】${v.facility} ${dateOnly}`);
   window.location.href = `mailto:${getPbEmailTo()}?subject=${subject}&body=${encodeURIComponent(body)}`;
   v.exported = true;
   localStorage.setItem('visits', JSON.stringify(visits));
@@ -3122,11 +3319,21 @@ let summaryYear = new Date().getFullYear();
 let summaryMonth = new Date().getMonth() + 1;
 
 function renderSummary() {
+  const scopeWrap = document.getElementById('summary-scope');
+  scopeWrap.style.display = importedVisits.length ? 'block' : 'none';
+  if (!importedVisits.length) summaryScope = 'mine';
+  const mineBtn = document.getElementById('scope-mine');
+  const allBtn = document.getElementById('scope-all');
+  const on = 'background:var(--accent);color:var(--bg)';
+  const off = 'background:none;color:var(--text2)';
+  mineBtn.style.cssText += ';' + (summaryScope === 'mine' ? on : off);
+  allBtn.style.cssText += ';' + (summaryScope === 'all' ? on : off);
+
   const ym = `${summaryYear}-${String(summaryMonth).padStart(2,'0')}`;
   document.getElementById('summary-month-label').textContent =
-    `${summaryYear}年 ${summaryMonth}月`;
+    `${summaryYear}年 ${summaryMonth}月${summaryScope === 'all' ? '（支店全体）' : ''}`;
 
-  const monthly = visits.filter(v => v.yearMonth === ym);
+  const monthly = scopedVisits().filter(v => v.yearMonth === ym);
   const el = document.getElementById('summary-content');
 
   if (monthly.length === 0) {
@@ -3254,7 +3461,7 @@ function showScreen(id) {
   document.querySelector('.header').style.display = hideNav ? 'none' : 'flex';
   document.querySelector('.header-nav').style.display = hideNav ? 'none' : 'flex';
   if (id === 'screen-master') {
-    renderMasterList(); renderWorkList(); renderExportStats();
+    renderMasterList(); renderWorkList(); renderExportStats(); renderImportStats();
     const repInput = document.getElementById('reporter-input');
     if (repInput) repInput.value = reporterName;
     const pbInput = document.getElementById('pb-email-input');
@@ -3284,12 +3491,6 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-  document.getElementById('master-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter') addFacility();
-  });
-  document.getElementById('work-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter') addWork();
-  });
   // サジェストの外側をタップしたら閉じる
   document.addEventListener('click', e => {
     [['facility-suggest','f-facility'],['reporter-suggest','f-reporter'],['contact-suggest','f-contact'],['work-suggest','f-main-work']].forEach(([boxId, inputId]) => {
